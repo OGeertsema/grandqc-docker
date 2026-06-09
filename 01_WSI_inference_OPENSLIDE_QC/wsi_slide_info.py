@@ -4,7 +4,6 @@ from PIL import Image
 from wsi_stain_norm import standardizer
 import numpy as np
 
-
 def slide_info(slide, m_p_s, mpp_model):
     # Objective power
     try:
@@ -13,7 +12,8 @@ def slide_info(slide, m_p_s, mpp_model):
         obj_power = 99
 
     # Microne per pixel
-    mpp = float(slide.properties["openslide.mpp-x"])
+    mpp = get_resolution_metadata(slide)
+
     p_s = int(mpp_model / mpp * m_p_s)
 
     # Vendor
@@ -51,3 +51,20 @@ def slide_info(slide, m_p_s, mpp_model):
     print("Overall number of patches / slide (without tissue detection): ", patch_n_w_l0 * patch_n_h_l0)
 
     return p_s, patch_n_w_l0, patch_n_h_l0, mpp, w_l0, h_l0, obj_power
+
+def get_resolution_metadata(slide):
+    mpp = None
+    if slide.properties.get("openslide.mpp-x") is not None:
+        mpp = float(slide.properties["openslide.mpp-x"])
+    elif slide.properties.get("tiff.XResolution") is not None:
+        x_resolution = float(slide.properties["tiff.XResolution"])
+        unit = slide.properties.get("tiff.ResolutionUnit")
+        if unit == 'centimeter':
+            mpp = 10000 / x_resolution
+        elif unit == 'inch':
+            mpp = 25400 / x_resolution
+        else:
+            print("Unknown resolution unit: ", unit, "Assuming centimeters.")
+            mpp = 10000 / x_resolution
+    else:
+        raise KeyError("Microns per pixel information not found in slide properties.")
