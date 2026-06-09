@@ -1,16 +1,40 @@
 # MUST BE BUILD FROM ROOT OF THE PROJECT WITH: `docker build -t <name>:<tag> -f docker/Dockerfile .`
+# Op mac build: docker build --platform linux/amd64 -t <name>:<tag> -f docker/Dockerfile .
 
-FROM ghcr.io/astral-sh/uv:python3.10-bookworm
+ARG UBUNTU_VERSION=22.04
+ARG CUDA_MAJOR_VERSION=12.1.0
+ARG CUDNN_MAJOR_VERSION=8
+ 
+FROM nvidia/cuda:${CUDA_MAJOR_VERSION}-cudnn${CUDNN_MAJOR_VERSION}-runtime-ubuntu${UBUNTU_VERSION}
+ 
+ARG PYTHON_VERSION=3.10
+ 
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+ENV DEBIAN_FRONTEND=noninteractive
 
 # openslide and ssh dependencies   
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        libopenslide0 \
-        openssh-server && \
+        curl \
+        ca-certificates \
+        gcc \
+        git \
+        openssh-server \
+        libgl1 \
+        libgomp1 \
+        libjpeg-turbo8 \
+        libopenslide-dev \
+        libxml2-dev \
+        libxslt-dev && \
     rm -rf /var/lib/apt/lists/*
 
+# install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 # give uv access to the system python and its site-packages
 ENV UV_SYSTEM_PYTHON=1
+
+# install python
+RUN uv python install ${PYTHON_VERSION}
 
 # set the working directory to the project root 
 WORKDIR /grandqc
