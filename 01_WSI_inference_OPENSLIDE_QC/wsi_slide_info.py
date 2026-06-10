@@ -68,3 +68,4 @@ def get_resolution_metadata(slide):
             mpp = 10000 / x_resolution
     else:
         raise KeyError("Microns per pixel information not found in slide properties.")
+    return mpp
