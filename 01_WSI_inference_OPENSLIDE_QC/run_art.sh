@@ -1,7 +1,7 @@
 #!/bin/bash
 # setting
-SLIDE_FOLDER="/path/to/the/slides/"
-OUTPUT_DIR="/path/to/the/output/"
+SLIDE_FOLDER="/input"
+OUTPUT_DIR="/output"
 QC_MPP_MODEL=1.5
 CREATE_GEOJSON="Y"
 
