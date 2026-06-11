@@ -6,6 +6,7 @@ import torch
 from tqdm import tqdm
 import cv2
 import json
+import math
 
 #Helper functions
 def to_tensor_x(x, **kwargs):
@@ -47,17 +48,14 @@ def slide_process_single(model, tis_det_map_mpp, slide, patch_n_w_l0, patch_n_h_
 
     # Start loop
     for he in tqdm(range(patch_n_h_l0), total=patch_n_h_l0):
-        h = he * p_s + 1
-        if (he == 0):
-            h = 0
+        h = he * p_s
         # print("Current cycle ", he + 1, " of ", patch_n_h_l0)
         for wi in range(patch_n_w_l0):
-            w = wi * p_s + 1
-            if (wi == 0):
-                w = 0
+            w = wi * p_s
             #he = 12
             #wi = 15
-            td_patch = tis_det_map_mpp [he*m_p_s:(he+1)*m_p_s,wi*m_p_s:(wi+1)*m_p_s]
+            td_patch = tis_det_map_mpp[he*m_p_s:(he+1)*m_p_s, wi*m_p_s:(wi+1)*m_p_s]
+            orig_td_h, orig_td_w = td_patch.shape
             if td_patch.shape != (512,512):
                 # td_patch padding (incase td_patch does not equal (512,512))
                 original_shape = td_patch.shape
@@ -68,15 +66,22 @@ def slide_process_single(model, tis_det_map_mpp, slide, patch_n_w_l0, patch_n_h_
                 # Calculate padding needed
                 padding = [(0, desired_shape[i] - original_shape[i]) for i in range(2)]
 
-                # Apply padding
-                td_patch_ = np.pad(td_patch, padding, mode='constant')
+                # Apply padding with background values for outside-of-slide areas
+                td_patch_ = np.pad(td_patch, padding, mode='constant', constant_values=1)
             else:
                 td_patch_ = td_patch
 
             if np.count_nonzero(td_patch == 0) > 50: #here change to check of segmentation map
+                patch_w = min(p_s, w_l0 - w)
+                patch_h = min(p_s, h_l0 - h)
                 # Generate patch
-                work_patch = slide.read_region((w, h), 0, (p_s, p_s))
+                work_patch = slide.read_region((w, h), 0, (patch_w, patch_h))
                 work_patch = work_patch.convert('RGB')
+
+                if patch_w != p_s or patch_h != p_s:
+                    padded_patch = Image.new('RGB', (p_s, p_s), (255, 255, 255))
+                    padded_patch.paste(work_patch, (0, 0))
+                    work_patch = padded_patch
 
                 # Resize to model patch size
                 work_patch = work_patch.resize((m_p_s, m_p_s), Image.Resampling.LANCZOS)
@@ -88,40 +93,27 @@ def slide_process_single(model, tis_det_map_mpp, slide, patch_n_w_l0, patch_n_h_
 
                 mask_raw = np.argmax(predictions, axis=0).astype('int8')
                 mask = np.where(td_patch_ == 1, BACK_CLASS, mask_raw)
-
-
             else:
                 mask = np.full((512,512), BACK_CLASS)
 
 
 
-            if (wi == 0):
-                temp_image = mask
+            if orig_td_h < 512 or orig_td_w < 512:
+                mask = mask[:orig_td_h, :orig_td_w]
 
+            if wi == 0:
+                temp_image = mask
             else:
                 temp_image = np.concatenate((temp_image, mask), axis=1)
 
-        if (he == 0):
+        if he == 0:
             end_image = temp_image
-
         else:
             end_image = np.concatenate((end_image, temp_image), axis=0)
 
-    # now get size of padded region (buffer) at Model MPP
-    buffer_right_l = int((w_l0 - (patch_n_w_l0 * p_s)) * mpp / MPP_MODEL_1)
-    buffer_bottom_l = int((h_l0 - (patch_n_h_l0 * p_s)) * mpp / MPP_MODEL_1)
-    # firstly bottom
-    buffer_bottom = np.full((buffer_bottom_l, end_image.shape[1]), 0)
-    temp_image = np.concatenate((end_image, buffer_bottom), axis=0)
-    # now right side
-    temp_image_he, temp_image_wi = temp_image.shape  # width and height
-    buffer_right = np.full((temp_image_he, buffer_right_l), 0)
-    end_image = np.concatenate((temp_image, buffer_right), axis=1).astype(np.uint8)
-
     end_image_1class = make_1class_map_thr(end_image, colors)
     end_image_1class = Image.fromarray(end_image_1class)
-    end_image_1class = end_image_1class.resize((patch_n_w_l0*50, patch_n_h_l0*50), Image.Resampling.LANCZOS)
-
+    end_image_1class = end_image_1class.resize((patch_n_w_l0*50, patch_n_h_l0*50), Image.Resampling.NEAREST)
 
     return end_image_1class, end_image
 
