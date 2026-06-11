@@ -75,92 +75,92 @@ model.eval()
 for slide_name in slide_names:
     print("")
     print("Working with: ", slide_name)
-    # try:
-    path_slide = os.path.join(SLIDE_DIR, slide_name)
-    slide = OpenSlide(path_slide)
+    try:
+        path_slide = os.path.join(SLIDE_DIR, slide_name)
+        slide = OpenSlide(path_slide)
 
-    w_l0, h_l0 = slide.level_dimensions[0]
+        w_l0, h_l0 = slide.level_dimensions[0]
 
-    mpp = round(float(get_resolution_metadata(slide)), 4)
-    reduction_factor = MPP_MODEL_TD / mpp
+        mpp = round(float(get_resolution_metadata(slide)), 4)
+        reduction_factor = MPP_MODEL_TD / mpp
 
-    image_or = slide.get_thumbnail((w_l0 // reduction_factor, h_l0 // reduction_factor))
-    image_or.save(tis_det_dir_thumb + slide_name + ".jpg", quality = 80)
+        image_or = slide.get_thumbnail((w_l0 // reduction_factor, h_l0 // reduction_factor))
+        image_or.save(tis_det_dir_thumb + slide_name + ".jpg", quality = 80)
 
-    '''
-    As tissue detector was trained on jpeg compressed images - we have to reproduce this step.
-    Otherwise it functions suboptimal.
-    '''
+        '''
+        As tissue detector was trained on jpeg compressed images - we have to reproduce this step.
+        Otherwise it functions suboptimal.
+        '''
 
-    image = np.array(image_or)
-    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
-    result, image = cv2.imencode('.jpg', image, encode_param)
-    image = cv2.imdecode(image, 1)
-    image = Image.fromarray(image)
+        image = np.array(image_or)
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
+        result, image = cv2.imencode('.jpg', image, encode_param)
+        image = cv2.imdecode(image, 1)
+        image = Image.fromarray(image)
 
-    width, height = image.size
+        width, height = image.size
 
-    wi_n = width // M_P_S_MODEL_TD
-    he_n = height // M_P_S_MODEL_TD
+        wi_n = width // M_P_S_MODEL_TD
+        he_n = height // M_P_S_MODEL_TD
 
-    overhang_wi = width - wi_n * M_P_S_MODEL_TD
-    overhang_he = height - he_n * M_P_S_MODEL_TD
+        overhang_wi = width - wi_n * M_P_S_MODEL_TD
+        overhang_he = height - he_n * M_P_S_MODEL_TD
 
-    print('Overhang (< 1 patch) for width and height: ', overhang_wi, ',', overhang_he)
+        print('Overhang (< 1 patch) for width and height: ', overhang_wi, ',', overhang_he)
 
-    p_s = M_P_S_MODEL_TD
+        p_s = M_P_S_MODEL_TD
 
-    for h in range(he_n + 1):
-        for w in range(wi_n + 1):
-            if w != wi_n and h != he_n:
-                image_work = image.crop((w * p_s, h * p_s, (w + 1) * p_s, (h + 1) * p_s))
-            elif w == wi_n and h != he_n:
-                image_work = image.crop((width - p_s, h * p_s, width, (h + 1) * p_s))
-            elif w != wi_n and h == he_n:
-                image_work = image.crop((w * p_s, height - p_s, (w + 1) * p_s, height))
+        for h in range(he_n + 1):
+            for w in range(wi_n + 1):
+                if w != wi_n and h != he_n:
+                    image_work = image.crop((w * p_s, h * p_s, (w + 1) * p_s, (h + 1) * p_s))
+                elif w == wi_n and h != he_n:
+                    image_work = image.crop((width - p_s, h * p_s, width, (h + 1) * p_s))
+                elif w != wi_n and h == he_n:
+                    image_work = image.crop((w * p_s, height - p_s, (w + 1) * p_s, height))
+                else:
+                    image_work = image.crop((width - p_s, height - p_s, width, height))
+
+                image_pre = get_preprocessing(image_work, preprocessing_fn)
+                x_tensor = torch.from_numpy(image_pre).to(DEVICE).unsqueeze(0)
+                predictions = model.predict(x_tensor)
+                predictions = (predictions.squeeze().cpu().numpy())
+
+                mask = np.argmax(predictions, axis=0).astype('int8')
+
+                class_mask = make_class_map(mask, colors)
+
+                if w == 0:
+                    temp_image = mask
+                    temp_image_class_map = class_mask
+                elif w == wi_n:
+                    mask = mask[:, p_s - overhang_wi:p_s]
+                    temp_image = np.concatenate((temp_image, mask), axis=1)
+                    class_mask = class_mask[:, p_s - overhang_wi:p_s, :]
+                    temp_image_class_map = np.concatenate((temp_image_class_map, class_mask), axis=1)
+                else:
+                    temp_image = np.concatenate((temp_image, mask), axis=1)
+                    temp_image_class_map = np.concatenate((temp_image_class_map, class_mask), axis=1)
+            if h == 0:
+                end_image = temp_image
+                end_image_class_map = temp_image_class_map
+            elif h == he_n:
+                temp_image = temp_image [p_s - overhang_he:p_s,]
+                end_image = np.concatenate((end_image, temp_image), axis=0)
+                temp_image_class_map = temp_image_class_map [p_s - overhang_he:p_s, :, :]
+                end_image_class_map = np.concatenate((end_image_class_map, temp_image_class_map), axis=0)
             else:
-                image_work = image.crop((width - p_s, height - p_s, width, height))
+                end_image = np.concatenate((end_image, temp_image), axis=0)
+                end_image_class_map = np.concatenate((end_image_class_map, temp_image_class_map), axis=0)
 
-            image_pre = get_preprocessing(image_work, preprocessing_fn)
-            x_tensor = torch.from_numpy(image_pre).to(DEVICE).unsqueeze(0)
-            predictions = model.predict(x_tensor)
-            predictions = (predictions.squeeze().cpu().numpy())
-
-            mask = np.argmax(predictions, axis=0).astype('int8')
-
-            class_mask = make_class_map(mask, colors)
-
-            if w == 0:
-                temp_image = mask
-                temp_image_class_map = class_mask
-            elif w == wi_n:
-                mask = mask[:, p_s - overhang_wi:p_s]
-                temp_image = np.concatenate((temp_image, mask), axis=1)
-                class_mask = class_mask[:, p_s - overhang_wi:p_s, :]
-                temp_image_class_map = np.concatenate((temp_image_class_map, class_mask), axis=1)
-            else:
-                temp_image = np.concatenate((temp_image, mask), axis=1)
-                temp_image_class_map = np.concatenate((temp_image_class_map, class_mask), axis=1)
-        if h == 0:
-            end_image = temp_image
-            end_image_class_map = temp_image_class_map
-        elif h == he_n:
-            temp_image = temp_image [p_s - overhang_he:p_s,]
-            end_image = np.concatenate((end_image, temp_image), axis=0)
-            temp_image_class_map = temp_image_class_map [p_s - overhang_he:p_s, :, :]
-            end_image_class_map = np.concatenate((end_image_class_map, temp_image_class_map), axis=0)
-        else:
-            end_image = np.concatenate((end_image, temp_image), axis=0)
-            end_image_class_map = np.concatenate((end_image_class_map, temp_image_class_map), axis=0)
-
-    Image.fromarray(end_image).save(os.path.join(tis_det_dir_mask, slide_name + '_MASK.png'))
-    Image.fromarray(end_image_class_map).save(os.path.join(tis_det_dir_mask_col, slide_name + '_MASK_COL.png'))
-    overlay = cv2.addWeighted(np.array(image), OVER_IMAGE, end_image_class_map, OVER_MASK, 0)
-    overlay = Image.fromarray(overlay)
-    overlay.save(os.path.join(tis_det_dir_over, slide_name + '_OVERLAY.jpg'))
-    # except Exception as e:
-    #     print("Exception with", slide_name)
-    #     print("Error:", str(e))
+        Image.fromarray(end_image).save(os.path.join(tis_det_dir_mask, slide_name + '_MASK.png'))
+        Image.fromarray(end_image_class_map).save(os.path.join(tis_det_dir_mask_col, slide_name + '_MASK_COL.png'))
+        overlay = cv2.addWeighted(np.array(image), OVER_IMAGE, end_image_class_map, OVER_MASK, 0)
+        overlay = Image.fromarray(overlay)
+        overlay.save(os.path.join(tis_det_dir_over, slide_name + '_OVERLAY.jpg'))
+    except Exception as e:
+        print("Exception with", slide_name)
+        print("Error:", str(e))
 
 
 
