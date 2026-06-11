@@ -3,6 +3,7 @@
 from PIL import Image
 from wsi_stain_norm import standardizer
 import numpy as np
+import math
 
 def slide_info(slide, m_p_s, mpp_model):
     # Objective power
@@ -24,9 +25,9 @@ def slide_info(slide, m_p_s, mpp_model):
     w_l0 = dim_l0[0]
     h_l0 = dim_l0[1]
 
-    # Calculate number of patches to process
-    patch_n_w_l0 = int(w_l0 / p_s)
-    patch_n_h_l0 = int(h_l0 / p_s)
+    # Calculate number of patches to process, including right/bottom partial patches
+    patch_n_w_l0 = math.ceil(w_l0 / p_s)
+    patch_n_h_l0 = math.ceil(h_l0 / p_s)
 
     # Number of levels
     num_level = slide.level_count
