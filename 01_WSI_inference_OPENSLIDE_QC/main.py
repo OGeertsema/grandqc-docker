@@ -140,7 +140,7 @@ for slide_name in slide_names[start:end]:
         Classes: 0 - tissue, 1 - background
         '''
 
-        tis_det_map_mpp = np.array(tis_det_map.resize((int(w_l0 * mpp / MPP_MODEL), int(h_l0 * mpp / MPP_MODEL)), Image.Resampling.LANCZOS))
+        tis_det_map_mpp = np.array(tis_det_map.resize((int(w_l0 * mpp / MPP_MODEL), int(h_l0 * mpp / MPP_MODEL)), Image.Resampling.NEAREST))
         map, full_mask = slide_process_single(model_prim, tis_det_map_mpp, slide, patch_n_w_l0, patch_n_h_l0, p_s,
                                               M_P_S_MODEL, colors, ENCODER_MODEL,
                                               ENCODER_MODEL_WEIGHTS, DEVICE, BACK_CLASS, MPP_MODEL, mpp, w_l0, h_l0)
